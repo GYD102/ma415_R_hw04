@@ -1,0 +1,193 @@
+---
+title: "Assignment 04"
+author: "Glib Dolotov"
+date: "February 21, 2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, results = 'hide',warning = FALSE, message = FALSE}
+library(tidyverse)
+```
+
+## 10.5 -- Exercises
+
+### 1.
+How can you tell if an object is a tibble? (Hint: try printing ```mtcars```, which is a regular data frame).
+
+When printing, a tibble is labeled "A tibble" whereas a table doesn't have a similar header:
+
+```{r}
+head(as.tibble(mtcars))
+head(mtcars)
+```
+
+
+### 2.
+Compare and contrast the following operations on a ```data.frame``` and equivalent tibble. What is different? Why might the default data frame behaviours cause you frustration?
+
+```{r}
+df <- data.frame(abc = 1, xyz = "a")
+dt <- as.tibble(df)
+
+df
+attributes(df)
+
+dt
+attributes(dt)
+
+df$x
+dt$x
+
+# Specifying a single "box" within a data-frame yields the actual object within
+# the data-frame.
+df[, "xyz"]
+attributes(df[,"xyz"])
+
+# However selecting a subset of a data-frame that has multiple "boxes" yields a
+# data-frame
+df[, c("abc", "xyz")]
+attributes(df[, c("abc","xyz")])
+
+# Meanwhile any subset of a tibble, no matter how small, is also a tibble.
+dt[, "xyz"]
+attributes(dt[,"xyz"])
+
+dt[, c("abc", "xyz")]
+attributes(dt[, c("abc","xyz")])
+```
+
+
+### 3.
+If you have the name of a variable stored in an object, e.g. ```var <- "mpg"```, how can you extract the reference variable from a tibble?
+
+```{r}
+var <- "mpg"
+ct <- as.tibble(mtcars)
+ct[var]
+ct[[var]]
+```
+
+### 4.
+
+```{r}
+annoying <- tibble(
+  `1` = 1:10,
+  `2` = `1` * 2 + rnorm(length(`1`))
+)
+```
+
+Practice referring to non-syntactic names in the data frame by:
+
+1. Extracting the variable called ```1```.
+
+```{r}
+annoying[["1"]]
+annoying$`1`
+```
+
+2. Plotting a scatterplot of ```1``` vs ```2```.
+```{r}
+plot(annoying)
+```
+
+3. Creating a new column called ```3``` which is ```2``` divided by ```1```.
+```{r}
+less_annoying <- bind_cols(annoying,
+                           tibble(`3` = annoying$`2`/annoying$`1`))
+less_annoying
+```
+
+4. Renaming the columns to ```one```, ```two``` and ```three```.
+```{r}
+attributes(less_annoying)
+re_name <- function(tib, old, nu){
+  attr(tib,'names')[match(old, attr(tib,'names'))] = nu
+}
+# For some reason the above function doesn't work, but the below lines, which
+# are identical to the function with variable names manually plugged in, do
+# work.
+attr(less_annoying,'names')[match(1, attr(less_annoying,'names'))] <- 'one'
+attr(less_annoying,'names')[match(2, attr(less_annoying,'names'))] <- 'two'
+attr(less_annoying,'names')[match(3, attr(less_annoying,'names'))] <- 'three'
+less_annoying
+```
+
+### 5.
+What does ```tibble::enframe()``` do? When might you use it?
+
+As per ```?enframe```: "```enframe()``` converts named vectors or lists to two-column data frames. For unnamed vectors, the natural sequence is used as name column." It would be useful when we need to take a long vector or list and convert it into a tibble.
+
+### 6.
+What option controls how many additional column names are printed at the footer of a tibble?
+
+```getOption("tibble.max_extra_cols")```
+
+
+## 12.6.1 -- Exercises
+
+### 1.
+In this case study I set ```na.rm = TRUE``` just to make it easier to check that we had the correct values. Is this reasonable? Think about how missing values are represented in this dataset. Are there implicit missing values? What’s the difference between an ```NA``` and zero?
+
+There are no implicit missing values. Any operations on ```NA``` yield ```NA```
+whereas operations on zero yield various results.
+
+### 2.
+What happens if you neglect the ```mutate()`` step? (```mutate(key = stringr::str_replace(key, "newrel", "new_rel"))```)
+
+You fail to prepare a part of the data for the ```separate``` step which 
+assumes that there will be "_" between parts of the code (key) that we describe
+ as "new", "type", and "sexage".
+```{r}
+test <- tibble(key = c(1:2), value = c("newrel_f5564", "new_rel_f5565"))
+test %>% 
+  separate(value, c("new", "type", "sexage"), sep = "_")
+```
+
+### 3.
+I claimed that ```iso2``` and ```iso3``` were redundant with country. Confirm this claim.
+```{r}
+# Create a reference table of which "country" values should match to which
+# "iso2" and "iso3" values.
+comp = data.frame(unique(who$country), unique(who$iso2), unique(who$iso3))
+
+# The three calls below evaluate to "1" if for every row in "who", the
+# "country", "iso2", and "iso3" values match correctly.
+# i.e. makes sure that "United States of America" always matches to "US" which
+#      always matches to "USA".
+prod(match(who$country,comp[,1]) == match(who$iso2,comp[,2]))
+prod(match(who$country,comp[,1]) == match(who$iso3,comp[,3]))
+prod(match(who$iso3,comp[,3]) == match(who$iso2,comp[,2]))
+```
+
+### 4.
+For each country, year, and sex compute the total number of cases of TB. Make an informative visualisation of the data.
+
+```{r}
+who2 <- who %>%
+  gather(code, value, new_sp_m014:newrel_f65, na.rm = TRUE) %>% 
+  mutate(code = stringr::str_replace(code, "newrel", "new_rel")) %>%
+  separate(code, c("new", "var", "sexage")) %>% 
+  select(-new, -iso2, -iso3) %>% 
+  separate(sexage, c("sex", "age"), sep = 1)
+
+who3 <- who2 %>% group_by(country, sex, year) %>% summarize(total = sum(value))
+
+plotwho <- function(excl_low, incl_hi){
+  ggplot(filter(who3, country < incl_hi, country > excl_low),
+         aes(country,
+             year,
+             size = total,
+             color = sex,
+             group = sex)
+         ) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) +
+  geom_point(position = position_dodge(width = 0.8))
+}
+
+plotwho("B","C")
+plotwho("X","ZZ")
+```
